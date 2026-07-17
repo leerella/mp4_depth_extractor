@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.log
+*.pid
+worker/runtime/
+worker/models/
+worker/test-output/
+worker/feature-test/
+worker/level-test/
+worker/quality-comparison.jpg
+worker/vendor/video-depth-anything/checkpoints/
+web/.next/
+web/node_modules/
+*.mp4
+*_sheet.jpg
+python-*.exe
