@@ -38,14 +38,10 @@ LIMB_COLORS = [
 class Keypoint(NamedTuple):
     x: float
     y: float
-    score: float = 1.0
-    id: int = -1
 
 
 class BodyResult(NamedTuple):
     keypoints: List[Union[Keypoint, None]]
-    total_score: float
-    total_parts: int
 
 
 def _make_layers(block: OrderedDict, no_relu_layers: list[str]) -> nn.Sequential:
@@ -106,12 +102,8 @@ class BodyPoseNet(nn.Module):
                 ("Mconv7_stage%d_L2" % i, [128, 19, 1, 1, 0]),
             ])
 
-        for name in list(blocks):
-            if name == "block1_1" or name == "block1_2":
-                continue
+        for name in blocks:
             blocks[name] = _make_layers(blocks[name], no_relu_layers)
-        blocks["block1_1"] = _make_layers(blocks["block1_1"], no_relu_layers)
-        blocks["block1_2"] = _make_layers(blocks["block1_2"], no_relu_layers)
 
         self.model1_1, self.model2_1, self.model3_1 = blocks["block1_1"], blocks["block2_1"], blocks["block3_1"]
         self.model4_1, self.model5_1, self.model6_1 = blocks["block4_1"], blocks["block5_1"], blocks["block6_1"]
@@ -309,12 +301,9 @@ def _format_bodies(candidate: np.ndarray, subset: np.ndarray) -> List[BodyResult
     return [
         BodyResult(
             keypoints=[
-                Keypoint(x=candidate[idx][0], y=candidate[idx][1], score=candidate[idx][2], id=candidate[idx][3])
-                if idx != -1 else None
+                Keypoint(x=candidate[idx][0], y=candidate[idx][1]) if idx != -1 else None
                 for idx in person[:18].astype(int)
             ],
-            total_score=person[18],
-            total_parts=person[19],
         )
         for person in subset
     ]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import shutil
 import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
@@ -10,6 +11,11 @@ import cv2
 import numpy as np
 import torch
 from torchvision.models.segmentation import DeepLabV3_ResNet50_Weights, deeplabv3_resnet50
+
+# Ensures lineart_model/openpose_model resolve both when this file runs as a
+# script (subprocess.run from app.py) and when imported as worker.process_sources
+# (e.g. from tests), which don't put this directory on sys.path by default.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from lineart_model import detect_lineart, load_lineart_model
 from openpose_model import detect_pose, load_pose_model
@@ -186,15 +192,16 @@ def create_matte(source: Path, target: Path) -> None:
     encode_browser_mp4(working, target)
 
 
-def create_lineart(source: Path, target: Path) -> None:
+def create_frame_pass(source: Path, target: Path, load_model, detect, cache_dir: Path, color: bool = False) -> None:
+    """Runs a per-frame detector (lineart/pose) over `source`, writing both a video and a PNG sequence zip."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = load_lineart_model(LINEART_CACHE, device)
+    model = load_model(cache_dir, device)
     capture = cv2.VideoCapture(str(source))
     fps = capture.get(cv2.CAP_PROP_FPS)
     width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
     working = target.with_name(f".{target.stem}.working.mp4")
-    output = writer(working, fps, (width, height))
+    output = writer(working, fps, (width, height), color=color)
 
     frame_dir = sequence_frame_dir(target)
     if frame_dir.exists():
@@ -206,46 +213,23 @@ def create_lineart(source: Path, target: Path) -> None:
         ok, frame = capture.read()
         if not ok:
             break
-        line = detect_lineart(model, frame, device)
-        output.write(line)
-        write_frame_png(frame_dir / f"{index:05d}.png", line)
+        result = detect(model, frame, device)
+        output.write(result)
+        write_frame_png(frame_dir / f"{index:05d}.png", result)
         index += 1
 
     capture.release()
     output.release()
     encode_browser_mp4(working, target)
     zip_sequence(frame_dir, target.with_name(f"{target.stem}_sequence.zip"))
+
+
+def create_lineart(source: Path, target: Path) -> None:
+    create_frame_pass(source, target, load_lineart_model, detect_lineart, LINEART_CACHE)
 
 
 def create_pose(source: Path, target: Path) -> None:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = load_pose_model(POSE_CACHE, device)
-    capture = cv2.VideoCapture(str(source))
-    fps = capture.get(cv2.CAP_PROP_FPS)
-    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    working = target.with_name(f".{target.stem}.working.mp4")
-    output = writer(working, fps, (width, height), color=True)
-
-    frame_dir = sequence_frame_dir(target)
-    if frame_dir.exists():
-        shutil.rmtree(frame_dir)
-    frame_dir.mkdir(parents=True)
-
-    index = 0
-    while True:
-        ok, frame = capture.read()
-        if not ok:
-            break
-        skeleton = detect_pose(model, frame, device)
-        output.write(skeleton)
-        write_frame_png(frame_dir / f"{index:05d}.png", skeleton)
-        index += 1
-
-    capture.release()
-    output.release()
-    encode_browser_mp4(working, target)
-    zip_sequence(frame_dir, target.with_name(f"{target.stem}_sequence.zip"))
+    create_frame_pass(source, target, load_pose_model, detect_pose, POSE_CACHE, color=True)
 
 
 def main() -> None:

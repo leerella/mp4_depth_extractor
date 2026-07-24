@@ -148,7 +148,7 @@ class FeatureIntegrationTests(unittest.TestCase):
 
             create_matte(clip, matte)
             create_green_screen_source(clip, matte, green_screen)
-            create_validation_sheet(clip, clip, matte, validation)
+            create_validation_sheet(clip, clip, matte, None, None, validation)
             matte_frames = read_gray_video(matte)
             green_frames = read_color_video(green_screen)
             foreground = float((matte_frames >= 128).mean())

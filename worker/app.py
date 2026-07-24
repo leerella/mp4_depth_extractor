@@ -520,157 +520,50 @@ def get_job(job_id: str) -> dict:
         return dict(job)
 
 
-@app.get("/jobs/{job_id}/depth")
-def download_depth(job_id: str) -> FileResponse:
-    path = RUNTIME / job_id / "output" / "depdy_depth.mp4"
-    if not path.exists():
-        raise HTTPException(404, "결과 파일을 찾을 수 없습니다.")
-    return FileResponse(path, media_type="video/mp4", filename="depdy_depth.mp4")
+def register_asset(
+    route: str,
+    filename: str,
+    media_type: str,
+    label: str,
+    download_name: str | None = None,
+    download_label: str | None = None,
+    preview: bool = True,
+) -> None:
+    """Registers GET /jobs/{job_id}/<route> (if download_name given) and/or
+    GET /jobs/{job_id}/preview/<route> for a per-job output file under RUNTIME."""
+    key = route.replace("/", "_")
+    download_label = download_label or f"{label} 결과"
+
+    def resolve(job_id: str, missing_label: str) -> Path:
+        path = RUNTIME / job_id / "output" / filename
+        if not path.exists():
+            raise HTTPException(404, f"{missing_label}를 찾을 수 없습니다.")
+        return path
+
+    if download_name is not None:
+        def download(job_id: str) -> FileResponse:
+            return FileResponse(resolve(job_id, download_label), media_type=media_type, filename=download_name)
+        download.__name__ = f"download_{key}"
+        app.get(f"/jobs/{{job_id}}/{route}")(download)
+
+    if preview:
+        def preview_file(job_id: str) -> FileResponse:
+            return FileResponse(
+                resolve(job_id, f"{label} 미리보기"),
+                media_type=media_type,
+                headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+            )
+        preview_file.__name__ = f"preview_{key}"
+        app.get(f"/jobs/{{job_id}}/preview/{route}")(preview_file)
 
 
-@app.get("/jobs/{job_id}/depth/sequence")
-def download_depth_sequence(job_id: str) -> FileResponse:
-    path = RUNTIME / job_id / "output" / "depdy_depth_sequence.zip"
-    if not path.exists():
-        raise HTTPException(404, "Depth 시퀀스를 찾을 수 없습니다.")
-    return FileResponse(path, media_type="application/zip", filename="depdy_depth_sequence.zip")
-
-
-@app.get("/jobs/{job_id}/matte")
-def download_matte(job_id: str) -> FileResponse:
-    path = RUNTIME / job_id / "output" / "depdy_matte.mp4"
-    if not path.exists():
-        raise HTTPException(404, "Person Matte 결과를 찾을 수 없습니다.")
-    return FileResponse(path, media_type="video/mp4", filename="depdy_person_matte.mp4")
-
-
-@app.get("/jobs/{job_id}/lineart")
-def download_lineart(job_id: str) -> FileResponse:
-    path = RUNTIME / job_id / "output" / "depdy_lineart.mp4"
-    if not path.exists():
-        raise HTTPException(404, "Line Art 결과를 찾을 수 없습니다.")
-    return FileResponse(path, media_type="video/mp4", filename="depdy_lineart.mp4")
-
-
-@app.get("/jobs/{job_id}/lineart/sequence")
-def download_lineart_sequence(job_id: str) -> FileResponse:
-    path = RUNTIME / job_id / "output" / "depdy_lineart_sequence.zip"
-    if not path.exists():
-        raise HTTPException(404, "Line Art 시퀀스를 찾을 수 없습니다.")
-    return FileResponse(path, media_type="application/zip", filename="depdy_lineart_sequence.zip")
-
-
-@app.get("/jobs/{job_id}/pose")
-def download_pose(job_id: str) -> FileResponse:
-    path = RUNTIME / job_id / "output" / "depdy_pose.mp4"
-    if not path.exists():
-        raise HTTPException(404, "Pose Skeleton 결과를 찾을 수 없습니다.")
-    return FileResponse(path, media_type="video/mp4", filename="depdy_pose.mp4")
-
-
-@app.get("/jobs/{job_id}/pose/sequence")
-def download_pose_sequence(job_id: str) -> FileResponse:
-    path = RUNTIME / job_id / "output" / "depdy_pose_sequence.zip"
-    if not path.exists():
-        raise HTTPException(404, "Pose Skeleton 시퀀스를 찾을 수 없습니다.")
-    return FileResponse(path, media_type="application/zip", filename="depdy_pose_sequence.zip")
-
-
-@app.get("/jobs/{job_id}/alpha")
-def download_alpha(job_id: str) -> FileResponse:
-    path = RUNTIME / job_id / "output" / "depdy_green_screen.mp4"
-    if not path.exists():
-        raise HTTPException(404, "Green Screen 결과를 찾을 수 없습니다.")
-    return FileResponse(path, media_type="video/mp4", filename="depdy_green_screen.mp4")
-
-
-@app.get("/jobs/{job_id}/validation")
-def download_validation(job_id: str) -> FileResponse:
-    path = RUNTIME / job_id / "output" / "validation-sheet.jpg"
-    if not path.exists():
-        raise HTTPException(404, "Validation Sheet를 찾을 수 없습니다.")
-    return FileResponse(path, media_type="image/jpeg", filename="depdy_validation_sheet.jpg")
-
-
-@app.get("/jobs/{job_id}/preview/depth")
-def preview_depth(job_id: str) -> FileResponse:
-    path = RUNTIME / job_id / "output" / "depdy_depth.mp4"
-    if not path.exists():
-        raise HTTPException(404, "Depth 미리보기를 찾을 수 없습니다.")
-    return FileResponse(
-        path,
-        media_type="video/mp4",
-        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
-    )
-
-
-@app.get("/jobs/{job_id}/preview/depth-base")
-def preview_depth_base(job_id: str) -> FileResponse:
-    path = RUNTIME / job_id / "output" / "depdy_depth_preview_base.mp4"
-    if not path.exists():
-        raise HTTPException(404, "실시간 Depth 미리보기를 찾을 수 없습니다.")
-    return FileResponse(
-        path,
-        media_type="video/mp4",
-        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
-    )
-
-
-@app.get("/jobs/{job_id}/preview/matte")
-def preview_matte(job_id: str) -> FileResponse:
-    path = RUNTIME / job_id / "output" / "depdy_matte.mp4"
-    if not path.exists():
-        raise HTTPException(404, "Person Matte 미리보기를 찾을 수 없습니다.")
-    return FileResponse(
-        path,
-        media_type="video/mp4",
-        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
-    )
-
-
-@app.get("/jobs/{job_id}/preview/lineart")
-def preview_lineart(job_id: str) -> FileResponse:
-    path = RUNTIME / job_id / "output" / "depdy_lineart.mp4"
-    if not path.exists():
-        raise HTTPException(404, "Line Art 미리보기를 찾을 수 없습니다.")
-    return FileResponse(
-        path,
-        media_type="video/mp4",
-        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
-    )
-
-
-@app.get("/jobs/{job_id}/preview/pose")
-def preview_pose(job_id: str) -> FileResponse:
-    path = RUNTIME / job_id / "output" / "depdy_pose.mp4"
-    if not path.exists():
-        raise HTTPException(404, "Pose Skeleton 미리보기를 찾을 수 없습니다.")
-    return FileResponse(
-        path,
-        media_type="video/mp4",
-        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
-    )
-
-
-@app.get("/jobs/{job_id}/preview/alpha")
-def preview_alpha(job_id: str) -> FileResponse:
-    path = RUNTIME / job_id / "output" / "depdy_green_screen.mp4"
-    if not path.exists():
-        raise HTTPException(404, "Green Screen 미리보기를 찾을 수 없습니다.")
-    return FileResponse(
-        path,
-        media_type="video/mp4",
-        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
-    )
-
-
-@app.get("/jobs/{job_id}/preview/validation")
-def preview_validation(job_id: str) -> FileResponse:
-    path = RUNTIME / job_id / "output" / "validation-sheet.jpg"
-    if not path.exists():
-        raise HTTPException(404, "Validation Sheet 미리보기를 찾을 수 없습니다.")
-    return FileResponse(
-        path,
-        media_type="image/jpeg",
-        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
-    )
+register_asset("depth", "depdy_depth.mp4", "video/mp4", "Depth", download_name="depdy_depth.mp4")
+register_asset("depth/sequence", "depdy_depth_sequence.zip", "application/zip", "Depth", download_name="depdy_depth_sequence.zip", download_label="Depth 시퀀스", preview=False)
+register_asset("depth-base", "depdy_depth_preview_base.mp4", "video/mp4", "실시간 Depth")
+register_asset("matte", "depdy_matte.mp4", "video/mp4", "Person Matte", download_name="depdy_person_matte.mp4")
+register_asset("lineart", "depdy_lineart.mp4", "video/mp4", "Line Art", download_name="depdy_lineart.mp4")
+register_asset("lineart/sequence", "depdy_lineart_sequence.zip", "application/zip", "Line Art", download_name="depdy_lineart_sequence.zip", download_label="Line Art 시퀀스", preview=False)
+register_asset("pose", "depdy_pose.mp4", "video/mp4", "Pose Skeleton", download_name="depdy_pose.mp4")
+register_asset("pose/sequence", "depdy_pose_sequence.zip", "application/zip", "Pose Skeleton", download_name="depdy_pose_sequence.zip", download_label="Pose Skeleton 시퀀스", preview=False)
+register_asset("alpha", "depdy_green_screen.mp4", "video/mp4", "Green Screen", download_name="depdy_green_screen.mp4")
+register_asset("validation", "validation-sheet.jpg", "image/jpeg", "Validation Sheet", download_name="depdy_validation_sheet.jpg", download_label="Validation Sheet")
