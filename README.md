@@ -29,7 +29,17 @@ powershell -ExecutionPolicy Bypass -File .\start-depdy.ps1
 
 ## 최초 설치
 
-필수 조건은 Windows, Python 3.11, Node.js, NVIDIA CUDA 환경, `ffmpeg`와 `ffprobe`입니다.
+필수 조건은 Windows, Python 3.11, Node.js, NVIDIA CUDA 환경, `ffmpeg`와 `ffprobe`(PATH에 등록)입니다.
+
+```powershell
+git clone https://github.com/leerella/mp4_depth_extractor.git
+Set-Location mp4_depth_extractor
+.\setup.ps1
+```
+
+`setup.ps1`이 서브모듈 초기화, Python 가상환경(`.venv`), `worker/requirements.txt` 설치, Video Depth Anything Small 가중치 다운로드, `web`의 `npm ci`까지 한 번에 처리합니다. Person Matte 모델과 Line Art 모델은 (용량이 작아) 최초 실행 시 자동으로 `worker/models`에 내려받아지며 Git에는 포함되지 않습니다.
+
+수동으로 설치하려면 아래 단계를 개별 실행해도 됩니다.
 
 ```powershell
 git submodule update --init --recursive
@@ -40,13 +50,11 @@ npm ci
 Set-Location ..
 ```
 
-Video Depth Anything Small 가중치를 아래 위치에 둡니다.
+Video Depth Anything Small 가중치는 아래 위치에 두면 됩니다 (다운로드 주소는 vendored 프로젝트의 `worker/vendor/video-depth-anything/README.md`에도 있습니다).
 
 ```text
 worker\vendor\video-depth-anything\checkpoints\video_depth_anything_vits.pth
 ```
-
-가중치 다운로드 주소는 vendored 프로젝트의 `worker/vendor/video-depth-anything/README.md`에 있습니다. Person Matte 모델과 Line Art 모델은 최초 실행 시 `worker/models`에 내려받아지며 Git에는 포함되지 않습니다.
 
 ## 사용
 
