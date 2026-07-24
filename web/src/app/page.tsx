@@ -1,8 +1,9 @@
+import { InstagramLogo } from "@phosphor-icons/react/dist/ssr";
 import { DepthWorkspace } from "@/components/depth-workspace";
 
 export default function Home() {
   return (
-    <main className="min-h-[100dvh] bg-[#f5f5f3] text-[#101318]">
+    <main className="bg-grain min-h-[100dvh] text-[#101318]">
       <header className="mx-auto flex h-20 w-full max-w-[1440px] items-center justify-between px-5 md:px-8">
         <a href="#top" className="text-[17px] font-semibold tracking-[-0.04em]">
           DEPDY
@@ -46,7 +47,9 @@ export default function Home() {
               ["01", "Relative Depth", "장면의 앞뒤 구조와 움직임을 보존합니다."],
               ["02", "Person Matte", "머리카락과 빠른 동작의 경계를 분리합니다."],
               ["03", "Green Screen Source", "인물은 유지하고 배경을 녹색으로 합성한 소스를 만듭니다."],
-              ["04", "Seedance Pack", "생성형 영상 작업에 필요한 파일을 묶어냅니다."],
+              ["04", "Line Art", "검정 배경에 흰색 아웃라인만 남긴 컨트롤넷용 소스를 만듭니다."],
+              ["05", "Pose Skeleton", "ControlNet OpenPose 스타일 스켈레톤을 추출합니다."],
+              ["06", "Seedance Pack", "생성형 영상 작업에 필요한 파일을 묶어냅니다."],
             ].map(([number, title, description]) => (
               <div key={number} className="grid grid-cols-[44px_1fr] gap-3 border-b border-[#cacbc7] py-5 sm:grid-cols-[54px_0.8fr_1.2fr]">
                 <span className="font-mono text-[10px] text-[#888b90]">{number}</span>
@@ -58,8 +61,16 @@ export default function Home() {
         </div>
       </section>
 
-      <footer className="mx-auto flex max-w-[1440px] items-end justify-between px-5 pb-8 pt-14 md:px-8">
-        <p className="text-3xl font-medium tracking-[-0.05em]">LEELLA_DEPDY</p>
+      <footer className="mx-auto flex max-w-[1440px] items-center justify-between px-5 pb-8 pt-14 md:px-8">
+        <a
+          href="https://www.instagram.com/from.leella"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 text-sm font-medium tracking-[-0.02em] text-[#101318] transition-colors hover:text-[#62666d]"
+        >
+          <InstagramLogo size={18} weight="regular" />
+          @from.leella
+        </a>
         <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-[#777a80]">Private local processing</p>
       </footer>
     </main>
