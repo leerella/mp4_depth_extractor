@@ -12,12 +12,14 @@ import torch
 from torchvision.models.segmentation import DeepLabV3_ResNet50_Weights, deeplabv3_resnet50
 
 from lineart_model import detect_lineart, load_lineart_model
+from openpose_model import detect_pose, load_pose_model
 
 
 PRESET_CONTRAST = {"natural": 1.0, "subject": 1.18, "contrast": 1.45}
 PRESET_BRIGHTNESS = {"natural": 0.0, "subject": 3.0, "contrast": 0.0}
 MODEL_CACHE = Path(__file__).resolve().parent / "models" / "hub"
 LINEART_CACHE = Path(__file__).resolve().parent / "models" / "lineart"
+POSE_CACHE = Path(__file__).resolve().parent / "models" / "openpose"
 
 
 def sequence_frame_dir(target: Path) -> Path:
@@ -40,8 +42,8 @@ def zip_sequence(frame_dir: Path, target_zip: Path) -> None:
     shutil.rmtree(frame_dir)
 
 
-def writer(path: Path, fps: float, size: tuple[int, int]) -> cv2.VideoWriter:
-    result = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), fps, size, False)
+def writer(path: Path, fps: float, size: tuple[int, int], color: bool = False) -> cv2.VideoWriter:
+    result = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), fps, size, color)
     if not result.isOpened():
         raise RuntimeError(f"출력 영상을 열 수 없습니다: {path}")
     return result
@@ -215,6 +217,37 @@ def create_lineart(source: Path, target: Path) -> None:
     zip_sequence(frame_dir, target.with_name(f"{target.stem}_sequence.zip"))
 
 
+def create_pose(source: Path, target: Path) -> None:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = load_pose_model(POSE_CACHE, device)
+    capture = cv2.VideoCapture(str(source))
+    fps = capture.get(cv2.CAP_PROP_FPS)
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    working = target.with_name(f".{target.stem}.working.mp4")
+    output = writer(working, fps, (width, height), color=True)
+
+    frame_dir = sequence_frame_dir(target)
+    if frame_dir.exists():
+        shutil.rmtree(frame_dir)
+    frame_dir.mkdir(parents=True)
+
+    index = 0
+    while True:
+        ok, frame = capture.read()
+        if not ok:
+            break
+        skeleton = detect_pose(model, frame, device)
+        output.write(skeleton)
+        write_frame_png(frame_dir / f"{index:05d}.png", skeleton)
+        index += 1
+
+    capture.release()
+    output.release()
+    encode_browser_mp4(working, target)
+    zip_sequence(frame_dir, target.with_name(f"{target.stem}_sequence.zip"))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--depth", type=Path, required=True)
@@ -228,6 +261,7 @@ def main() -> None:
     parser.add_argument("--shadows", type=float, default=0.0)
     parser.add_argument("--matte", action="store_true")
     parser.add_argument("--lineart", action="store_true")
+    parser.add_argument("--pose", action="store_true")
     parser.add_argument("--preview-base", action="store_true")
     args = parser.parse_args()
 
@@ -252,6 +286,8 @@ def main() -> None:
         create_matte(args.video, args.output_dir / "depdy_matte.mp4")
     if args.lineart:
         create_lineart(args.video, args.output_dir / "depdy_lineart.mp4")
+    if args.pose:
+        create_pose(args.video, args.output_dir / "depdy_pose.mp4")
 
 
 if __name__ == "__main__":

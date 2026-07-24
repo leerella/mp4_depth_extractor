@@ -5,6 +5,7 @@ import {
   ArrowRight,
   Check,
   DownloadSimple,
+  FileImage,
   FileVideo,
   SlidersHorizontal,
   UploadSimple,
@@ -17,7 +18,7 @@ const MAX_BYTES = 500 * 1024 * 1024;
 const WORKER_URL = "http://127.0.0.1:8000";
 
 type Preset = "natural" | "subject" | "contrast";
-type ResultKind = "depth" | "matte" | "alpha" | "lineart" | "validation";
+type ResultKind = "depth" | "matte" | "alpha" | "lineart" | "pose" | "validation";
 type LevelSettings = {
   invert: boolean;
   contrast: number;
@@ -32,6 +33,8 @@ type JobResults = {
   alpha?: string;
   lineart?: string;
   lineartSequence?: string;
+  pose?: string;
+  poseSequence?: string;
   validation: string;
   previews: {
     depth: string;
@@ -39,6 +42,7 @@ type JobResults = {
     matte?: string;
     alpha?: string;
     lineart?: string;
+    pose?: string;
     validation: string;
   };
 };
@@ -124,6 +128,7 @@ const RESULT_LABELS: Record<ResultKind, string> = {
   matte: "Person Matte",
   alpha: "Green Screen",
   lineart: "Line Art",
+  pose: "Pose Skeleton",
   validation: "Validation Sheet",
 };
 
@@ -137,6 +142,7 @@ export function DepthWorkspace() {
   const [matte, setMatte] = useState(true);
   const [alpha, setAlpha] = useState(true);
   const [lineart, setLineart] = useState(true);
+  const [pose, setPose] = useState(false);
   const [invert, setInvert] = useState(false);
   const [contrastLevel, setContrastLevel] = useState(1);
   const [brightness, setBrightness] = useState(0);
@@ -181,8 +187,8 @@ export function DepthWorkspace() {
   function acceptFile(candidate?: File) {
     setError(null);
     if (!candidate) return;
-    if (!candidate.type.startsWith("video/")) {
-      setError("MP4 또는 MOV 영상만 올릴 수 있습니다.");
+    if (!candidate.type.startsWith("video/") && !candidate.type.startsWith("image/")) {
+      setError("MP4, MOV 영상 또는 JPG/PNG/WEBP 이미지만 올릴 수 있습니다.");
       return;
     }
     if (candidate.size > MAX_BYTES) {
@@ -220,6 +226,7 @@ export function DepthWorkspace() {
       body.append("matte", String(matte));
       body.append("alpha", String(alpha));
       body.append("lineart", String(lineart));
+      body.append("pose", String(pose));
       const response = await fetch(`${WORKER_URL}/jobs`, { method: "POST", body });
       if (!response.ok) throw new Error(await response.text());
       const created = (await response.json()) as Job;
@@ -342,6 +349,9 @@ export function DepthWorkspace() {
         job.results.lineart && job.results.previews.lineart
           ? { kind: "lineart" as const, path: job.results.previews.lineart }
           : null,
+        job.results.pose && job.results.previews.pose
+          ? { kind: "pose" as const, path: job.results.previews.pose }
+          : null,
         job.results.alpha && job.results.previews.alpha
           ? { kind: "alpha" as const, path: job.results.previews.alpha }
           : null,
@@ -368,17 +378,17 @@ export function DepthWorkspace() {
           if (event.key === "Enter" || event.key === " ") inputRef.current?.click();
         }}
       >
-        <input ref={inputRef} type="file" accept="video/mp4,video/quicktime" onChange={onInput} className="sr-only" />
+        <input ref={inputRef} type="file" accept="video/mp4,video/quicktime,image/jpeg,image/png,image/webp" onChange={onInput} className="sr-only" />
         <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.12em] text-[#92969d]">
           <span>New extraction</span>
           <UploadSimple size={18} weight="regular" />
         </div>
         <div className="max-w-lg">
           <p className="text-3xl font-medium leading-tight tracking-[-0.045em] md:text-5xl">
-            영상을 여기에 놓아주세요.
+            영상이나 이미지를 여기에 놓아주세요.
           </p>
           <p className="mt-5 max-w-sm text-sm leading-6 text-[#9da1a8]">
-            클릭해서 파일을 선택하거나 드래그하세요. MP4, MOV 파일을 지원합니다.
+            클릭해서 파일을 선택하거나 드래그하세요. MP4, MOV 영상 또는 JPG, PNG, WEBP 이미지를 지원합니다.
           </p>
           {error && <p className="mt-4 text-sm text-[#ff8c7f]">{error}</p>}
         </div>
@@ -436,7 +446,14 @@ export function DepthWorkspace() {
               브라우저가 MP4 미리보기를 지원하지 않습니다.
             </video>
           )
-        ) : preview && <video src={preview} className="h-full w-full object-contain" controls playsInline />}
+        ) : preview && (
+          file?.type.startsWith("image/") ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={preview} alt="업로드한 이미지 미리보기" className="h-full w-full object-contain" />
+          ) : (
+            <video src={preview} className="h-full w-full object-contain" controls playsInline />
+          )
+        )}
         {previewError?.url === activePreviewUrl && (
           <div className="absolute inset-x-4 bottom-4 rounded-[9px] bg-[#b33c32]/95 px-4 py-3 text-xs text-white">
             {previewError.message}
@@ -491,7 +508,11 @@ export function DepthWorkspace() {
       <div className="p-5 md:p-7">
         <div className="flex items-start justify-between gap-5 border-b border-[#d9dad6] pb-5">
           <div className="flex min-w-0 gap-3">
-            <FileVideo className="mt-0.5 shrink-0" size={19} />
+            {file.type.startsWith("image/") ? (
+              <FileImage className="mt-0.5 shrink-0" size={19} />
+            ) : (
+              <FileVideo className="mt-0.5 shrink-0" size={19} />
+            )}
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{file.name}</p>
               <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.08em] text-[#85888d]">
@@ -609,6 +630,13 @@ export function DepthWorkspace() {
           <Toggle label="Person matte" detail="인물 경계 소스" checked={matte} onChange={setMatte} disabled={Boolean(job)} />
           <Toggle label="Green screen" detail="녹색 배경 합성 소스" checked={alpha} onChange={setAlpha} disabled={Boolean(job)} />
           <Toggle label="Line art" detail="검정 배경 흰색 아웃라인 소스 (AI 렌더 컨트롤넷용)" checked={lineart} onChange={setLineart} disabled={Boolean(job)} />
+          <Toggle
+            label="Pose skeleton"
+            detail="ControlNet OpenPose 스타일 스켈레톤. 매우 느림 — 2080 Ti 기준 10초 영상 약 4분, 60초 영상 약 25분 소요"
+            checked={pose}
+            onChange={setPose}
+            disabled={Boolean(job)}
+          />
         </div>
 
         {job && (
@@ -637,6 +665,8 @@ export function DepthWorkspace() {
               {job.results.matte && <DownloadLink href={job.results.matte} label="Download Person Matte" filename="depdy_person_matte.mp4" version={downloadVersion} secondary />}
               {job.results.lineart && <DownloadLink href={job.results.lineart} label="Download Line Art" filename="depdy_lineart.mp4" version={downloadVersion} secondary />}
               {job.results.lineartSequence && <DownloadLink href={job.results.lineartSequence} label="Download Line Art Sequence (ZIP)" filename="depdy_lineart_sequence.zip" version={downloadVersion} secondary />}
+              {job.results.pose && <DownloadLink href={job.results.pose} label="Download Pose Skeleton" filename="depdy_pose.mp4" version={downloadVersion} secondary />}
+              {job.results.poseSequence && <DownloadLink href={job.results.poseSequence} label="Download Pose Skeleton Sequence (ZIP)" filename="depdy_pose_sequence.zip" version={downloadVersion} secondary />}
               {job.results.alpha && <DownloadLink href={job.results.alpha} label="Download Green Screen" filename="depdy_green_screen.mp4" version={downloadVersion} secondary />}
               <DownloadLink href={job.results.validation} label="Download Validation Sheet" filename="depdy_validation_sheet.jpg" version={downloadVersion} secondary />
             </div>

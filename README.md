@@ -1,6 +1,6 @@
 # DEPDY
 
-로컬 GPU에서 MP4/MOV 영상의 Relative Depth, Person Matte, Green Screen, Line Art 소스와 Validation Sheet를 생성하는 웹 도구입니다.
+로컬 GPU에서 MP4/MOV 영상의 Relative Depth, Person Matte, Green Screen, Line Art, Pose Skeleton 소스와 Validation Sheet를 생성하는 웹 도구입니다.
 
 ## 실행
 
@@ -37,7 +37,9 @@ Set-Location mp4_depth_extractor
 .\setup.ps1
 ```
 
-`setup.ps1`이 서브모듈 초기화, Python 가상환경(`.venv`), `worker/requirements.txt` 설치, Video Depth Anything Small 가중치 다운로드, `web`의 `npm ci`까지 한 번에 처리합니다. Person Matte 모델과 Line Art 모델은 (용량이 작아) 최초 실행 시 자동으로 `worker/models`에 내려받아지며 Git에는 포함되지 않습니다.
+`setup.ps1`이 서브모듈 초기화, Python 가상환경(`.venv`), `worker/requirements.txt` 설치, Video Depth Anything Small 가중치 다운로드, `web`의 `npm ci`까지 한 번에 처리합니다. Person Matte, Line Art, Pose Skeleton 모델은 최초 실행 시 자동으로 `worker/models`에 내려받아지며 Git에는 포함되지 않습니다.
+
+**라이선스 참고**: Pose Skeleton은 CMU OpenPose 체크포인트(`lllyasviel/Annotators`의 `body_pose_model.pth`)를 사용합니다. 이 가중치는 **비상업적 용도로만** 사용 가능합니다 (CMU 라이선스). 상업적으로 사용하려면 별도 라이선스가 필요합니다. Depth/Person Matte/Line Art 모델에는 이 제약이 없습니다.
 
 수동으로 설치하려면 아래 단계를 개별 실행해도 됩니다.
 
@@ -58,10 +60,10 @@ worker\vendor\video-depth-anything\checkpoints\video_depth_anything_vits.pth
 
 ## 사용
 
-1. 최대 60초, 500MB 이하의 MP4 또는 MOV 영상을 선택합니다.
-2. Depth preset과 Person Matte/Green Screen/Line Art 출력을 선택합니다.
+1. 최대 60초, 500MB 이하의 MP4/MOV 영상 또는 JPG/PNG/WEBP 이미지를 선택합니다. 이미지는 내부적으로 짧은 영상으로 변환되어 동일한 파이프라인으로 처리됩니다.
+2. Depth preset과 Person Matte/Green Screen/Line Art/Pose Skeleton 출력을 선택합니다. Pose Skeleton은 매우 느리므로(2080 Ti 기준 10초 영상 약 4분, 60초 영상 약 25분) 기본값이 꺼져 있습니다.
 3. `Extract sources`를 누릅니다.
 4. Depth 프리뷰에서 Levels와 Invert를 실시간으로 확인합니다.
-5. Depth, Person Matte, Green Screen, Line Art, Validation Sheet를 각각 다운로드합니다. Depth와 Line Art는 PNG 시퀀스(ZIP)로도 받을 수 있습니다.
+5. Depth, Person Matte, Green Screen, Line Art, Pose Skeleton, Validation Sheet를 각각 다운로드합니다. Depth, Line Art, Pose Skeleton은 PNG 시퀀스(ZIP)로도 받을 수 있습니다.
 
 모든 입력과 결과는 `worker/runtime` 아래에서만 처리되며 Git에는 포함되지 않습니다.

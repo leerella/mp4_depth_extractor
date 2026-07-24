@@ -17,6 +17,9 @@ VENDOR = ROOT / "worker" / "vendor" / "video-depth-anything"
 RUNTIME = ROOT / "worker" / "runtime"
 MAX_BYTES = 500 * 1024 * 1024
 MAX_DURATION = 60.0
+VIDEO_CONTENT_TYPES = {"video/mp4", "video/quicktime", "application/octet-stream"}
+IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
+IMAGE_SUFFIXES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 
 app = FastAPI(title="DEPDY Worker", version="0.1.0")
 app.add_middleware(
@@ -100,6 +103,7 @@ def create_validation_sheet(
     depth_path: Path,
     matte_path: Path | None,
     lineart_path: Path | None,
+    pose_path: Path | None,
     target_path: Path,
 ) -> None:
     meta = probe_video(video_path)
@@ -111,6 +115,8 @@ def create_validation_sheet(
         inputs.append(matte_path)
     if lineart_path is not None:
         inputs.append(lineart_path)
+    if pose_path is not None:
+        inputs.append(pose_path)
 
     command = ["ffmpeg", "-y"]
     for path in inputs:
@@ -149,6 +155,7 @@ def process_sources(
     shadows: float,
     matte: bool,
     lineart: bool,
+    pose: bool,
     preview_base: bool,
 ) -> None:
     command = [
@@ -164,6 +171,8 @@ def process_sources(
         command.append("--matte")
     if lineart:
         command.append("--lineart")
+    if pose:
+        command.append("--pose")
     if preview_base:
         command.append("--preview-base")
     subprocess.run(
@@ -206,11 +215,32 @@ def run_depth_job(
     matte: bool,
     alpha: bool,
     lineart: bool,
+    pose: bool,
+    is_image: bool,
 ) -> None:
     job_dir = input_path.parent
     output_dir = job_dir / "output"
     normalized = job_dir / "normalized.mp4"
     try:
+        if is_image:
+            update_job(job_id, status="processing", progress=5, stage="이미지를 영상으로 변환")
+            converted = job_dir / "input_from_image.mp4"
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-loop", "1", "-i", str(input_path),
+                    "-t", "1", "-r", "8",
+                    "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+                    "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "18",
+                    str(converted),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            input_path = converted
+
         update_job(job_id, status="processing", progress=8, stage="영상 정보 확인")
         meta = probe_video(input_path)
         if meta["duration"] > MAX_DURATION:
@@ -261,6 +291,8 @@ def run_depth_job(
             update_job(job_id, progress=78, stage="Person Matte 생성")
         if lineart:
             update_job(job_id, progress=82, stage="Line Art 생성")
+        if pose:
+            update_job(job_id, progress=86, stage="Pose Skeleton 생성 (느릴 수 있음)")
         process_sources(
             raw_depth,
             normalized,
@@ -273,6 +305,7 @@ def run_depth_job(
             shadows,
             matte or alpha,
             lineart,
+            pose,
             True,
         )
 
@@ -292,6 +325,10 @@ def run_depth_job(
             results["lineart"] = f"/jobs/{job_id}/lineart"
             results["lineartSequence"] = f"/jobs/{job_id}/lineart/sequence"
             previews["lineart"] = f"/jobs/{job_id}/preview/lineart"
+        if pose:
+            results["pose"] = f"/jobs/{job_id}/pose"
+            results["poseSequence"] = f"/jobs/{job_id}/pose/sequence"
+            previews["pose"] = f"/jobs/{job_id}/preview/pose"
         if alpha:
             update_job(job_id, progress=92, stage="Green Screen 생성")
             create_green_screen_source(
@@ -306,6 +343,7 @@ def run_depth_job(
             output_dir / "depdy_depth.mp4",
             output_dir / "depdy_matte.mp4" if matte else None,
             output_dir / "depdy_lineart.mp4" if lineart else None,
+            output_dir / "depdy_pose.mp4" if pose else None,
             output_dir / "validation-sheet.jpg",
         )
         previews["validation"] = f"/jobs/{job_id}/preview/validation"
@@ -359,15 +397,18 @@ async def create_job(
     matte: bool = Form(False),
     alpha: bool = Form(False),
     lineart: bool = Form(False),
+    pose: bool = Form(False),
 ) -> dict:
     validate_levels(preset, contrast, brightness, highlights, shadows)
-    if video.content_type not in {"video/mp4", "video/quicktime", "application/octet-stream"}:
-        raise HTTPException(415, "MP4 또는 MOV 영상만 올릴 수 있습니다.")
+    is_image = video.content_type in IMAGE_CONTENT_TYPES
+    if video.content_type not in VIDEO_CONTENT_TYPES and not is_image:
+        raise HTTPException(415, "MP4, MOV 영상 또는 JPG/PNG/WEBP 이미지만 올릴 수 있습니다.")
 
     job_id = uuid.uuid4().hex
     job_dir = RUNTIME / job_id
     job_dir.mkdir(parents=True, exist_ok=False)
-    input_path = job_dir / "input.mp4"
+    input_name = "input" + IMAGE_SUFFIXES[video.content_type] if is_image else "input.mp4"
+    input_path = job_dir / input_name
     size = 0
     with input_path.open("wb") as target:
         while chunk := await video.read(1024 * 1024):
@@ -392,6 +433,8 @@ async def create_job(
         matte,
         alpha,
         lineart,
+        pose,
+        is_image,
     )
     return jobs[job_id]
 
@@ -435,15 +478,18 @@ def update_levels(
             shadows,
             False,
             False,
+            False,
             preset_changed,
         )
         matte_path = output_dir / "depdy_matte.mp4"
         lineart_path = output_dir / "depdy_lineart.mp4"
+        pose_path = output_dir / "depdy_pose.mp4"
         create_validation_sheet(
             normalized,
             output_dir / "depdy_depth.mp4",
             matte_path if "matte" in job["results"] else None,
             lineart_path if "lineart" in job["results"] else None,
+            pose_path if "pose" in job["results"] else None,
             output_dir / "validation-sheet.jpg",
         )
     except subprocess.CalledProcessError as error:
@@ -514,6 +560,22 @@ def download_lineart_sequence(job_id: str) -> FileResponse:
     return FileResponse(path, media_type="application/zip", filename="depdy_lineart_sequence.zip")
 
 
+@app.get("/jobs/{job_id}/pose")
+def download_pose(job_id: str) -> FileResponse:
+    path = RUNTIME / job_id / "output" / "depdy_pose.mp4"
+    if not path.exists():
+        raise HTTPException(404, "Pose Skeleton 결과를 찾을 수 없습니다.")
+    return FileResponse(path, media_type="video/mp4", filename="depdy_pose.mp4")
+
+
+@app.get("/jobs/{job_id}/pose/sequence")
+def download_pose_sequence(job_id: str) -> FileResponse:
+    path = RUNTIME / job_id / "output" / "depdy_pose_sequence.zip"
+    if not path.exists():
+        raise HTTPException(404, "Pose Skeleton 시퀀스를 찾을 수 없습니다.")
+    return FileResponse(path, media_type="application/zip", filename="depdy_pose_sequence.zip")
+
+
 @app.get("/jobs/{job_id}/alpha")
 def download_alpha(job_id: str) -> FileResponse:
     path = RUNTIME / job_id / "output" / "depdy_green_screen.mp4"
@@ -571,6 +633,18 @@ def preview_lineart(job_id: str) -> FileResponse:
     path = RUNTIME / job_id / "output" / "depdy_lineart.mp4"
     if not path.exists():
         raise HTTPException(404, "Line Art 미리보기를 찾을 수 없습니다.")
+    return FileResponse(
+        path,
+        media_type="video/mp4",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
+@app.get("/jobs/{job_id}/preview/pose")
+def preview_pose(job_id: str) -> FileResponse:
+    path = RUNTIME / job_id / "output" / "depdy_pose.mp4"
+    if not path.exists():
+        raise HTTPException(404, "Pose Skeleton 미리보기를 찾을 수 없습니다.")
     return FileResponse(
         path,
         media_type="video/mp4",
