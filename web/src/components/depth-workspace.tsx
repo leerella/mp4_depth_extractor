@@ -17,7 +17,7 @@ const MAX_BYTES = 500 * 1024 * 1024;
 const WORKER_URL = "http://127.0.0.1:8000";
 
 type Preset = "natural" | "subject" | "contrast";
-type ResultKind = "depth" | "matte" | "alpha" | "validation";
+type ResultKind = "depth" | "matte" | "alpha" | "lineart" | "validation";
 type LevelSettings = {
   invert: boolean;
   contrast: number;
@@ -27,14 +27,18 @@ type LevelSettings = {
 };
 type JobResults = {
   depth: string;
+  depthSequence: string;
   matte?: string;
   alpha?: string;
+  lineart?: string;
+  lineartSequence?: string;
   validation: string;
   previews: {
     depth: string;
     depthBase?: string;
     matte?: string;
     alpha?: string;
+    lineart?: string;
     validation: string;
   };
 };
@@ -119,6 +123,7 @@ const RESULT_LABELS: Record<ResultKind, string> = {
   depth: "Depth",
   matte: "Person Matte",
   alpha: "Green Screen",
+  lineart: "Line Art",
   validation: "Validation Sheet",
 };
 
@@ -131,6 +136,7 @@ export function DepthWorkspace() {
   const [preset, setPreset] = useState<Preset>("natural");
   const [matte, setMatte] = useState(true);
   const [alpha, setAlpha] = useState(true);
+  const [lineart, setLineart] = useState(true);
   const [invert, setInvert] = useState(false);
   const [contrastLevel, setContrastLevel] = useState(1);
   const [brightness, setBrightness] = useState(0);
@@ -213,6 +219,7 @@ export function DepthWorkspace() {
       body.append("shadows", String(shadows));
       body.append("matte", String(matte));
       body.append("alpha", String(alpha));
+      body.append("lineart", String(lineart));
       const response = await fetch(`${WORKER_URL}/jobs`, { method: "POST", body });
       if (!response.ok) throw new Error(await response.text());
       const created = (await response.json()) as Job;
@@ -331,6 +338,9 @@ export function DepthWorkspace() {
         },
         job.results.matte && job.results.previews.matte
           ? { kind: "matte" as const, path: job.results.previews.matte }
+          : null,
+        job.results.lineart && job.results.previews.lineart
+          ? { kind: "lineart" as const, path: job.results.previews.lineart }
           : null,
         job.results.alpha && job.results.previews.alpha
           ? { kind: "alpha" as const, path: job.results.previews.alpha }
@@ -598,6 +608,7 @@ export function DepthWorkspace() {
         <div className="mt-6 border-t border-[#d9dad6]">
           <Toggle label="Person matte" detail="인물 경계 소스" checked={matte} onChange={setMatte} disabled={Boolean(job)} />
           <Toggle label="Green screen" detail="녹색 배경 합성 소스" checked={alpha} onChange={setAlpha} disabled={Boolean(job)} />
+          <Toggle label="Line art" detail="검정 배경 흰색 아웃라인 소스 (AI 렌더 컨트롤넷용)" checked={lineart} onChange={setLineart} disabled={Boolean(job)} />
         </div>
 
         {job && (
@@ -622,7 +633,10 @@ export function DepthWorkspace() {
             </div>
             <div className="grid gap-2">
               <DownloadLink href={job.results.depth} label="Download Depth" filename="depdy_depth.mp4" version={downloadVersion} />
+              <DownloadLink href={job.results.depthSequence} label="Download Depth Sequence (ZIP)" filename="depdy_depth_sequence.zip" version={downloadVersion} secondary />
               {job.results.matte && <DownloadLink href={job.results.matte} label="Download Person Matte" filename="depdy_person_matte.mp4" version={downloadVersion} secondary />}
+              {job.results.lineart && <DownloadLink href={job.results.lineart} label="Download Line Art" filename="depdy_lineart.mp4" version={downloadVersion} secondary />}
+              {job.results.lineartSequence && <DownloadLink href={job.results.lineartSequence} label="Download Line Art Sequence (ZIP)" filename="depdy_lineart_sequence.zip" version={downloadVersion} secondary />}
               {job.results.alpha && <DownloadLink href={job.results.alpha} label="Download Green Screen" filename="depdy_green_screen.mp4" version={downloadVersion} secondary />}
               <DownloadLink href={job.results.validation} label="Download Validation Sheet" filename="depdy_validation_sheet.jpg" version={downloadVersion} secondary />
             </div>

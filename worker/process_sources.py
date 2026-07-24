@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess
+import zipfile
 from pathlib import Path
 
 import cv2
@@ -9,10 +11,33 @@ import numpy as np
 import torch
 from torchvision.models.segmentation import DeepLabV3_ResNet50_Weights, deeplabv3_resnet50
 
+from lineart_model import detect_lineart, load_lineart_model
+
 
 PRESET_CONTRAST = {"natural": 1.0, "subject": 1.18, "contrast": 1.45}
 PRESET_BRIGHTNESS = {"natural": 0.0, "subject": 3.0, "contrast": 0.0}
 MODEL_CACHE = Path(__file__).resolve().parent / "models" / "hub"
+LINEART_CACHE = Path(__file__).resolve().parent / "models" / "lineart"
+
+
+def sequence_frame_dir(target: Path) -> Path:
+    return target.with_name(f".{target.stem}_frames")
+
+
+def write_frame_png(path: Path, frame: np.ndarray) -> None:
+    # cv2.imwrite silently fails on Windows paths containing non-ASCII characters
+    # (e.g. the project lives under a Korean username); encode + write bytes instead.
+    ok, encoded = cv2.imencode(".png", frame)
+    if not ok:
+        raise RuntimeError(f"프레임을 PNG로 인코딩하지 못했습니다: {path}")
+    path.write_bytes(encoded.tobytes())
+
+
+def zip_sequence(frame_dir: Path, target_zip: Path) -> None:
+    with zipfile.ZipFile(target_zip, "w", zipfile.ZIP_DEFLATED) as archive:
+        for frame_path in sorted(frame_dir.glob("*.png")):
+            archive.write(frame_path, frame_path.name)
+    shutil.rmtree(frame_dir)
 
 
 def writer(path: Path, fps: float, size: tuple[int, int]) -> cv2.VideoWriter:
@@ -58,6 +83,12 @@ def adjust_depth(
     gain = PRESET_CONTRAST[preset] * contrast
     offset = PRESET_BRIGHTNESS[preset] + brightness
 
+    frame_dir = sequence_frame_dir(target)
+    if frame_dir.exists():
+        shutil.rmtree(frame_dir)
+    frame_dir.mkdir(parents=True)
+
+    index = 0
     while True:
         ok, frame = capture.read()
         if not ok:
@@ -77,10 +108,13 @@ def adjust_depth(
         if invert:
             adjusted = 255 - adjusted
         output.write(adjusted)
+        write_frame_png(frame_dir / f"{index:05d}.png", adjusted)
+        index += 1
 
     capture.release()
     output.release()
     encode_browser_mp4(working, target)
+    zip_sequence(frame_dir, target.with_name(f"{target.stem}_sequence.zip"))
 
 
 def create_preview_base(source: Path, target: Path, preset: str) -> None:
@@ -150,6 +184,37 @@ def create_matte(source: Path, target: Path) -> None:
     encode_browser_mp4(working, target)
 
 
+def create_lineart(source: Path, target: Path) -> None:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = load_lineart_model(LINEART_CACHE, device)
+    capture = cv2.VideoCapture(str(source))
+    fps = capture.get(cv2.CAP_PROP_FPS)
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    working = target.with_name(f".{target.stem}.working.mp4")
+    output = writer(working, fps, (width, height))
+
+    frame_dir = sequence_frame_dir(target)
+    if frame_dir.exists():
+        shutil.rmtree(frame_dir)
+    frame_dir.mkdir(parents=True)
+
+    index = 0
+    while True:
+        ok, frame = capture.read()
+        if not ok:
+            break
+        line = detect_lineart(model, frame, device)
+        output.write(line)
+        write_frame_png(frame_dir / f"{index:05d}.png", line)
+        index += 1
+
+    capture.release()
+    output.release()
+    encode_browser_mp4(working, target)
+    zip_sequence(frame_dir, target.with_name(f"{target.stem}_sequence.zip"))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--depth", type=Path, required=True)
@@ -162,6 +227,7 @@ def main() -> None:
     parser.add_argument("--highlights", type=float, default=0.0)
     parser.add_argument("--shadows", type=float, default=0.0)
     parser.add_argument("--matte", action="store_true")
+    parser.add_argument("--lineart", action="store_true")
     parser.add_argument("--preview-base", action="store_true")
     args = parser.parse_args()
 
@@ -184,6 +250,8 @@ def main() -> None:
         )
     if args.matte:
         create_matte(args.video, args.output_dir / "depdy_matte.mp4")
+    if args.lineart:
+        create_lineart(args.video, args.output_dir / "depdy_lineart.mp4")
 
 
 if __name__ == "__main__":

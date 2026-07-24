@@ -99,6 +99,7 @@ def create_validation_sheet(
     video_path: Path,
     depth_path: Path,
     matte_path: Path | None,
+    lineart_path: Path | None,
     target_path: Path,
 ) -> None:
     meta = probe_video(video_path)
@@ -108,6 +109,8 @@ def create_validation_sheet(
     inputs = [video_path, depth_path]
     if matte_path is not None:
         inputs.append(matte_path)
+    if lineart_path is not None:
+        inputs.append(lineart_path)
 
     command = ["ffmpeg", "-y"]
     for path in inputs:
@@ -145,6 +148,7 @@ def process_sources(
     highlights: float,
     shadows: float,
     matte: bool,
+    lineart: bool,
     preview_base: bool,
 ) -> None:
     command = [
@@ -158,6 +162,8 @@ def process_sources(
         command.append("--invert")
     if matte:
         command.append("--matte")
+    if lineart:
+        command.append("--lineart")
     if preview_base:
         command.append("--preview-base")
     subprocess.run(
@@ -199,6 +205,7 @@ def run_depth_job(
     shadows: float,
     matte: bool,
     alpha: bool,
+    lineart: bool,
 ) -> None:
     job_dir = input_path.parent
     output_dir = job_dir / "output"
@@ -252,6 +259,8 @@ def run_depth_job(
         update_job(job_id, progress=72, stage="Depth 레벨 적용")
         if matte or alpha:
             update_job(job_id, progress=78, stage="Person Matte 생성")
+        if lineart:
+            update_job(job_id, progress=82, stage="Line Art 생성")
         process_sources(
             raw_depth,
             normalized,
@@ -263,11 +272,13 @@ def run_depth_job(
             highlights,
             shadows,
             matte or alpha,
+            lineart,
             True,
         )
 
         results: dict[str, object] = {
             "depth": f"/jobs/{job_id}/depth",
+            "depthSequence": f"/jobs/{job_id}/depth/sequence",
             "validation": f"/jobs/{job_id}/validation",
         }
         previews = {
@@ -277,6 +288,10 @@ def run_depth_job(
         if matte:
             results["matte"] = f"/jobs/{job_id}/matte"
             previews["matte"] = f"/jobs/{job_id}/preview/matte"
+        if lineart:
+            results["lineart"] = f"/jobs/{job_id}/lineart"
+            results["lineartSequence"] = f"/jobs/{job_id}/lineart/sequence"
+            previews["lineart"] = f"/jobs/{job_id}/preview/lineart"
         if alpha:
             update_job(job_id, progress=92, stage="Green Screen 생성")
             create_green_screen_source(
@@ -290,6 +305,7 @@ def run_depth_job(
             normalized,
             output_dir / "depdy_depth.mp4",
             output_dir / "depdy_matte.mp4" if matte else None,
+            output_dir / "depdy_lineart.mp4" if lineart else None,
             output_dir / "validation-sheet.jpg",
         )
         previews["validation"] = f"/jobs/{job_id}/preview/validation"
@@ -342,6 +358,7 @@ async def create_job(
     shadows: float = Form(0.0),
     matte: bool = Form(False),
     alpha: bool = Form(False),
+    lineart: bool = Form(False),
 ) -> dict:
     validate_levels(preset, contrast, brightness, highlights, shadows)
     if video.content_type not in {"video/mp4", "video/quicktime", "application/octet-stream"}:
@@ -374,6 +391,7 @@ async def create_job(
         shadows,
         matte,
         alpha,
+        lineart,
     )
     return jobs[job_id]
 
@@ -416,13 +434,16 @@ def update_levels(
             highlights,
             shadows,
             False,
+            False,
             preset_changed,
         )
         matte_path = output_dir / "depdy_matte.mp4"
+        lineart_path = output_dir / "depdy_lineart.mp4"
         create_validation_sheet(
             normalized,
             output_dir / "depdy_depth.mp4",
             matte_path if "matte" in job["results"] else None,
+            lineart_path if "lineart" in job["results"] else None,
             output_dir / "validation-sheet.jpg",
         )
     except subprocess.CalledProcessError as error:
@@ -461,12 +482,36 @@ def download_depth(job_id: str) -> FileResponse:
     return FileResponse(path, media_type="video/mp4", filename="depdy_depth.mp4")
 
 
+@app.get("/jobs/{job_id}/depth/sequence")
+def download_depth_sequence(job_id: str) -> FileResponse:
+    path = RUNTIME / job_id / "output" / "depdy_depth_sequence.zip"
+    if not path.exists():
+        raise HTTPException(404, "Depth 시퀀스를 찾을 수 없습니다.")
+    return FileResponse(path, media_type="application/zip", filename="depdy_depth_sequence.zip")
+
+
 @app.get("/jobs/{job_id}/matte")
 def download_matte(job_id: str) -> FileResponse:
     path = RUNTIME / job_id / "output" / "depdy_matte.mp4"
     if not path.exists():
         raise HTTPException(404, "Person Matte 결과를 찾을 수 없습니다.")
     return FileResponse(path, media_type="video/mp4", filename="depdy_person_matte.mp4")
+
+
+@app.get("/jobs/{job_id}/lineart")
+def download_lineart(job_id: str) -> FileResponse:
+    path = RUNTIME / job_id / "output" / "depdy_lineart.mp4"
+    if not path.exists():
+        raise HTTPException(404, "Line Art 결과를 찾을 수 없습니다.")
+    return FileResponse(path, media_type="video/mp4", filename="depdy_lineart.mp4")
+
+
+@app.get("/jobs/{job_id}/lineart/sequence")
+def download_lineart_sequence(job_id: str) -> FileResponse:
+    path = RUNTIME / job_id / "output" / "depdy_lineart_sequence.zip"
+    if not path.exists():
+        raise HTTPException(404, "Line Art 시퀀스를 찾을 수 없습니다.")
+    return FileResponse(path, media_type="application/zip", filename="depdy_lineart_sequence.zip")
 
 
 @app.get("/jobs/{job_id}/alpha")
@@ -514,6 +559,18 @@ def preview_matte(job_id: str) -> FileResponse:
     path = RUNTIME / job_id / "output" / "depdy_matte.mp4"
     if not path.exists():
         raise HTTPException(404, "Person Matte 미리보기를 찾을 수 없습니다.")
+    return FileResponse(
+        path,
+        media_type="video/mp4",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
+@app.get("/jobs/{job_id}/preview/lineart")
+def preview_lineart(job_id: str) -> FileResponse:
+    path = RUNTIME / job_id / "output" / "depdy_lineart.mp4"
+    if not path.exists():
+        raise HTTPException(404, "Line Art 미리보기를 찾을 수 없습니다.")
     return FileResponse(
         path,
         media_type="video/mp4",

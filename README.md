@@ -1,6 +1,6 @@
 # DEPDY
 
-로컬 GPU에서 MP4/MOV 영상의 Relative Depth, Person Matte, Green Screen 소스와 Validation Sheet를 생성하는 웹 도구입니다.
+로컬 GPU에서 MP4/MOV 영상의 Relative Depth, Person Matte, Green Screen, Line Art 소스와 Validation Sheet를 생성하는 웹 도구입니다.
 
 ## 실행
 
@@ -46,14 +46,14 @@ Video Depth Anything Small 가중치를 아래 위치에 둡니다.
 worker\vendor\video-depth-anything\checkpoints\video_depth_anything_vits.pth
 ```
 
-가중치 다운로드 주소는 vendored 프로젝트의 `worker/vendor/video-depth-anything/README.md`에 있습니다. Person Matte 모델은 최초 실행 시 `worker/models`에 내려받아지며 Git에는 포함되지 않습니다.
+가중치 다운로드 주소는 vendored 프로젝트의 `worker/vendor/video-depth-anything/README.md`에 있습니다. Person Matte 모델과 Line Art 모델은 최초 실행 시 `worker/models`에 내려받아지며 Git에는 포함되지 않습니다.
 
 ## 사용
 
 1. 최대 60초, 500MB 이하의 MP4 또는 MOV 영상을 선택합니다.
-2. Depth preset과 Person Matte/Green Screen 출력을 선택합니다.
+2. Depth preset과 Person Matte/Green Screen/Line Art 출력을 선택합니다.
 3. `Extract sources`를 누릅니다.
 4. Depth 프리뷰에서 Levels와 Invert를 실시간으로 확인합니다.
-5. Depth, Person Matte, Green Screen, Validation Sheet를 각각 다운로드합니다.
+5. Depth, Person Matte, Green Screen, Line Art, Validation Sheet를 각각 다운로드합니다. Depth와 Line Art는 PNG 시퀀스(ZIP)로도 받을 수 있습니다.
 
 모든 입력과 결과는 `worker/runtime` 아래에서만 처리되며 Git에는 포함되지 않습니다.
