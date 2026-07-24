@@ -29,7 +29,13 @@ powershell -ExecutionPolicy Bypass -File .\start-depdy.ps1
 
 ## 최초 설치
 
-필수 조건은 Windows, Python 3.11, Node.js, NVIDIA CUDA 환경, `ffmpeg`와 `ffprobe`(PATH에 등록)입니다.
+필수 조건은 Windows, **Python 3.11**, Node.js, NVIDIA CUDA 환경, `ffmpeg`와 `ffprobe`(PATH에 등록)입니다.
+
+**Python은 반드시 3.11이어야 합니다.** `worker/requirements.txt`에 고정된 `torch==2.1.1`, `xformers==0.0.23`는 Windows용 wheel을 cp311(3.11)까지만 배포하고 3.12 이상은 없어서, 3.12/3.13으로 설치하면 `pip install`이 실패합니다. 이미 다른 버전(3.12 등)이 설치돼 있어도 상관없이 3.11을 추가로 설치하면 되며, `py -3.11`로 버전을 골라 쓰기 때문에 서로 충돌하지 않습니다.
+
+- 다운로드: https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe
+- 설치 시 **"Add python.exe to PATH"** 체크
+- 설치 후 새 PowerShell 창에서 `py -3.11 --version`으로 확인
 
 ```powershell
 git clone https://github.com/leerella/mp4_depth_extractor.git
