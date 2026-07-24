@@ -62,11 +62,14 @@ def probe_video(path: Path) -> dict:
     }
 
 
-def normalize_dimensions(width: int, height: int) -> tuple[int, int]:
+def normalize_dimensions(width: int, height: int, is_image: bool = False) -> tuple[int, int]:
     landscape = width >= height
     max_width, max_height = (1920, 1080) if landscape else (1080, 1920)
     long_edge, short_edge = max(width, height), min(width, height)
-    if long_edge > 2048 or short_edge > 1100:
+    if is_image:
+        if long_edge > 4096:
+            raise ValueError("이미지 해상도는 4K(4096px)를 넘을 수 없습니다.")
+    elif long_edge > 2048 or short_edge > 1100:
         raise ValueError("영상 해상도는 1080p를 넘을 수 없습니다.")
 
     scale = min(max_width / width, max_height / height, 1.0)
@@ -245,7 +248,7 @@ def run_depth_job(
         meta = probe_video(input_path)
         if meta["duration"] > MAX_DURATION:
             raise ValueError("영상 길이는 60초를 넘을 수 없습니다.")
-        normalized_width, normalized_height = normalize_dimensions(meta["width"], meta["height"])
+        normalized_width, normalized_height = normalize_dimensions(meta["width"], meta["height"], is_image)
 
         target_fps = min(meta["fps"], 30.0)
         update_job(job_id, progress=15, stage="프레임 준비")
