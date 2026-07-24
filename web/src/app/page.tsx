@@ -47,7 +47,7 @@ export default function Home() {
               ["01", "Relative Depth", "장면의 앞뒤 구조와 움직임을 보존합니다."],
               ["02", "Person Matte", "머리카락과 빠른 동작의 경계를 분리합니다."],
               ["03", "Green Screen Source", "인물은 유지하고 배경을 녹색으로 합성한 소스를 만듭니다."],
-              ["04", "Line Art", "검정 배경에 흰색 아웃라인만 남긴 컨트롤넷용 소스를 만듭니다."],
+              ["04", "Line Art", "검정 배경에 흰색 아웃라인만 남깁니다."],
               ["05", "Pose Skeleton", "ControlNet OpenPose 스타일 스켈레톤을 추출합니다."],
               ["06", "Seedance Pack", "생성형 영상 작업에 필요한 파일을 묶어냅니다."],
             ].map(([number, title, description]) => (
