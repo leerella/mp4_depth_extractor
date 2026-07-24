@@ -598,7 +598,7 @@ export function DepthWorkspace() {
               }}
               className={`relative h-6 w-11 rounded-full transition-colors ${invert ? "bg-[#101318]" : "bg-[#c9ccd1]"}`}
             >
-              <span className={`absolute top-1 size-4 rounded-full bg-white transition-transform ${invert ? "translate-x-6" : "translate-x-1"}`} />
+              <span className={`absolute left-1 top-1 size-4 rounded-full bg-white transition-transform ${invert ? "translate-x-5" : "translate-x-0"}`} />
             </button>
           </div>
           <LevelSlider label="Contrast" value={contrastLevel} min={0.5} max={2} step={0.05} display={`${contrastLevel.toFixed(2)}×`} onChange={(value) => { setContrastLevel(value); setAutoApplyBlockedSignature(null); if (completedJobId) setActiveResult("depth"); }} />
