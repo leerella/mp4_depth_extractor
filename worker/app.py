@@ -6,6 +6,7 @@ import subprocess
 import sys
 import threading
 import uuid
+import zipfile
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
@@ -125,7 +126,7 @@ def create_validation_sheet(
     for path in inputs:
         command.extend(["-i", str(path)])
     filters = [
-        f"[{index}:v]select='{select}',scale=360:-2,tile=4x1[row{index}]"
+        f"[{index}:v]select='{select}',scale=360:-2,tile={len(indices)}x1[row{index}]"
         for index in range(len(inputs))
     ]
     rows = "".join(f"[row{index}]" for index in range(len(inputs)))
@@ -144,6 +145,26 @@ def create_validation_sheet(
         encoding="utf-8",
         errors="replace",
     )
+
+
+def image_from_sequence_zip(zip_path: Path, target_png: Path) -> None:
+    """Pulls the single PNG out of a one-frame sequence zip instead of re-encoding from video."""
+    with zipfile.ZipFile(zip_path) as archive:
+        target_png.write_bytes(archive.read(archive.namelist()[0]))
+    zip_path.unlink()
+
+
+def image_from_video_frame(video_path: Path, target_png: Path, delete_source: bool = True) -> None:
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", str(video_path), "-frames:v", "1", str(target_png)],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if delete_source:
+        video_path.unlink()
 
 
 def process_sources(
@@ -226,12 +247,11 @@ def run_depth_job(
     normalized = job_dir / "normalized.mp4"
     try:
         if is_image:
-            update_job(job_id, status="processing", progress=5, stage="이미지를 영상으로 변환")
+            update_job(job_id, status="processing", progress=5, stage="이미지를 프레임으로 변환")
             converted = job_dir / "input_from_image.mp4"
             subprocess.run(
                 [
-                    "ffmpeg", "-y", "-loop", "1", "-i", str(input_path),
-                    "-t", "1", "-r", "8",
+                    "ffmpeg", "-y", "-i", str(input_path), "-frames:v", "1",
                     "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
                     "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "18",
                     str(converted),
@@ -312,12 +332,20 @@ def run_depth_job(
             True,
         )
 
+        if is_image:
+            image_from_video_frame(normalized, output_dir / "depdy_original.png", delete_source=False)
+        else:
+            shutil.copy2(normalized, output_dir / "depdy_original.mp4")
+
         results: dict[str, object] = {
+            "original": f"/jobs/{job_id}/original",
             "depth": f"/jobs/{job_id}/depth",
-            "depthSequence": f"/jobs/{job_id}/depth/sequence",
             "validation": f"/jobs/{job_id}/validation",
         }
+        if not is_image:
+            results["depthSequence"] = f"/jobs/{job_id}/depth/sequence"
         previews = {
+            "original": f"/jobs/{job_id}/preview/original",
             "depth": f"/jobs/{job_id}/preview/depth",
             "depthBase": f"/jobs/{job_id}/preview/depth-base",
         }
@@ -326,11 +354,13 @@ def run_depth_job(
             previews["matte"] = f"/jobs/{job_id}/preview/matte"
         if lineart:
             results["lineart"] = f"/jobs/{job_id}/lineart"
-            results["lineartSequence"] = f"/jobs/{job_id}/lineart/sequence"
+            if not is_image:
+                results["lineartSequence"] = f"/jobs/{job_id}/lineart/sequence"
             previews["lineart"] = f"/jobs/{job_id}/preview/lineart"
         if pose:
             results["pose"] = f"/jobs/{job_id}/pose"
-            results["poseSequence"] = f"/jobs/{job_id}/pose/sequence"
+            if not is_image:
+                results["poseSequence"] = f"/jobs/{job_id}/pose/sequence"
             previews["pose"] = f"/jobs/{job_id}/preview/pose"
         if alpha:
             update_job(job_id, progress=92, stage="Green Screen 생성")
@@ -351,6 +381,24 @@ def run_depth_job(
         )
         previews["validation"] = f"/jobs/{job_id}/preview/validation"
         results["previews"] = previews
+
+        if is_image:
+            update_job(job_id, progress=98, stage="이미지 결과 정리")
+            image_from_sequence_zip(output_dir / "depdy_depth_sequence.zip", output_dir / "depdy_depth.png")
+            (output_dir / "depdy_depth.mp4").unlink()
+            preview_base = output_dir / "depdy_depth_preview_base.mp4"
+            if preview_base.exists():
+                image_from_video_frame(preview_base, output_dir / "depdy_depth_preview_base.png")
+            if matte:
+                image_from_video_frame(output_dir / "depdy_matte.mp4", output_dir / "depdy_matte.png")
+            if lineart:
+                image_from_sequence_zip(output_dir / "depdy_lineart_sequence.zip", output_dir / "depdy_lineart.png")
+                (output_dir / "depdy_lineart.mp4").unlink()
+            if pose:
+                image_from_sequence_zip(output_dir / "depdy_pose_sequence.zip", output_dir / "depdy_pose.png")
+                (output_dir / "depdy_pose.mp4").unlink()
+            if alpha:
+                image_from_video_frame(output_dir / "depdy_green_screen.mp4", output_dir / "depdy_green_screen.png")
         update_job(
             job_id,
             status="complete",
@@ -523,36 +571,46 @@ def get_job(job_id: str) -> dict:
         return dict(job)
 
 
+VIDEO_OR_IMAGE = [(".mp4", "video/mp4"), (".png", "image/png")]
+
+
 def register_asset(
     route: str,
-    filename: str,
-    media_type: str,
+    disk_stem: str,
+    candidates: list[tuple[str, str]],
     label: str,
-    download_name: str | None = None,
+    download: bool = True,
+    download_stem: str | None = None,
     download_label: str | None = None,
     preview: bool = True,
 ) -> None:
-    """Registers GET /jobs/{job_id}/<route> (if download_name given) and/or
-    GET /jobs/{job_id}/preview/<route> for a per-job output file under RUNTIME."""
+    """Registers GET /jobs/{job_id}/<route> and/or GET /jobs/{job_id}/preview/<route>
+    for a per-job output file under RUNTIME, trying each (extension, media_type) in
+    `candidates` in order -- lets the same route serve either a video or an image
+    result (image-sourced jobs produce stills instead of one-frame clips)."""
     key = route.replace("/", "_")
     download_label = download_label or f"{label} 결과"
+    download_stem = download_stem or disk_stem
 
-    def resolve(job_id: str, missing_label: str) -> Path:
-        path = RUNTIME / job_id / "output" / filename
-        if not path.exists():
-            raise HTTPException(404, f"{missing_label}를 찾을 수 없습니다.")
-        return path
+    def resolve(job_id: str, missing_label: str) -> tuple[Path, str]:
+        for ext, media_type in candidates:
+            path = RUNTIME / job_id / "output" / f"{disk_stem}{ext}"
+            if path.exists():
+                return path, media_type
+        raise HTTPException(404, f"{missing_label}를 찾을 수 없습니다.")
 
-    if download_name is not None:
-        def download(job_id: str) -> FileResponse:
-            return FileResponse(resolve(job_id, download_label), media_type=media_type, filename=download_name)
-        download.__name__ = f"download_{key}"
-        app.get(f"/jobs/{{job_id}}/{route}")(download)
+    if download:
+        def download_file(job_id: str) -> FileResponse:
+            path, media_type = resolve(job_id, download_label)
+            return FileResponse(path, media_type=media_type, filename=f"{download_stem}{path.suffix}")
+        download_file.__name__ = f"download_{key}"
+        app.get(f"/jobs/{{job_id}}/{route}")(download_file)
 
     if preview:
         def preview_file(job_id: str) -> FileResponse:
+            path, media_type = resolve(job_id, f"{label} 미리보기")
             return FileResponse(
-                resolve(job_id, f"{label} 미리보기"),
+                path,
                 media_type=media_type,
                 headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
             )
@@ -560,13 +618,14 @@ def register_asset(
         app.get(f"/jobs/{{job_id}}/preview/{route}")(preview_file)
 
 
-register_asset("depth", "depdy_depth.mp4", "video/mp4", "Depth", download_name="depdy_depth.mp4")
-register_asset("depth/sequence", "depdy_depth_sequence.zip", "application/zip", "Depth", download_name="depdy_depth_sequence.zip", download_label="Depth 시퀀스", preview=False)
-register_asset("depth-base", "depdy_depth_preview_base.mp4", "video/mp4", "실시간 Depth")
-register_asset("matte", "depdy_matte.mp4", "video/mp4", "Person Matte", download_name="depdy_person_matte.mp4")
-register_asset("lineart", "depdy_lineart.mp4", "video/mp4", "Line Art", download_name="depdy_lineart.mp4")
-register_asset("lineart/sequence", "depdy_lineart_sequence.zip", "application/zip", "Line Art", download_name="depdy_lineart_sequence.zip", download_label="Line Art 시퀀스", preview=False)
-register_asset("pose", "depdy_pose.mp4", "video/mp4", "Pose Skeleton", download_name="depdy_pose.mp4")
-register_asset("pose/sequence", "depdy_pose_sequence.zip", "application/zip", "Pose Skeleton", download_name="depdy_pose_sequence.zip", download_label="Pose Skeleton 시퀀스", preview=False)
-register_asset("alpha", "depdy_green_screen.mp4", "video/mp4", "Green Screen", download_name="depdy_green_screen.mp4")
-register_asset("validation", "validation-sheet.jpg", "image/jpeg", "Validation Sheet", download_name="depdy_validation_sheet.jpg", download_label="Validation Sheet")
+register_asset("original", "depdy_original", VIDEO_OR_IMAGE, "원본")
+register_asset("depth", "depdy_depth", VIDEO_OR_IMAGE, "Depth")
+register_asset("depth/sequence", "depdy_depth_sequence", [(".zip", "application/zip")], "Depth", download_label="Depth 시퀀스", preview=False)
+register_asset("depth-base", "depdy_depth_preview_base", VIDEO_OR_IMAGE, "실시간 Depth", download=False)
+register_asset("matte", "depdy_matte", VIDEO_OR_IMAGE, "Person Matte", download_stem="depdy_person_matte")
+register_asset("lineart", "depdy_lineart", VIDEO_OR_IMAGE, "Line Art")
+register_asset("lineart/sequence", "depdy_lineart_sequence", [(".zip", "application/zip")], "Line Art", download_label="Line Art 시퀀스", preview=False)
+register_asset("pose", "depdy_pose", VIDEO_OR_IMAGE, "Pose Skeleton")
+register_asset("pose/sequence", "depdy_pose_sequence", [(".zip", "application/zip")], "Pose Skeleton", download_label="Pose Skeleton 시퀀스", preview=False)
+register_asset("alpha", "depdy_green_screen", VIDEO_OR_IMAGE, "Green Screen")
+register_asset("validation", "validation-sheet", [(".jpg", "image/jpeg")], "Validation Sheet", download_stem="depdy_validation_sheet", download_label="Validation Sheet")

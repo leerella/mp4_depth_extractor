@@ -18,7 +18,7 @@ const MAX_BYTES = 500 * 1024 * 1024;
 const WORKER_URL = "http://127.0.0.1:8000";
 
 type Preset = "natural" | "subject" | "contrast";
-type ResultKind = "depth" | "matte" | "alpha" | "lineart" | "pose" | "validation";
+type ResultKind = "original" | "depth" | "matte" | "alpha" | "lineart" | "pose" | "validation";
 type LevelSettings = {
   invert: boolean;
   contrast: number;
@@ -27,8 +27,9 @@ type LevelSettings = {
   shadows: number;
 };
 type JobResults = {
+  original: string;
   depth: string;
-  depthSequence: string;
+  depthSequence?: string;
   matte?: string;
   alpha?: string;
   lineart?: string;
@@ -37,6 +38,7 @@ type JobResults = {
   poseSequence?: string;
   validation: string;
   previews: {
+    original: string;
     depth: string;
     depthBase?: string;
     matte?: string;
@@ -124,6 +126,7 @@ const PRESET_DETAILS: Record<Preset, { label: string; image: string; description
 };
 
 const RESULT_LABELS: Record<ResultKind, string> = {
+  original: "Original",
   depth: "Depth",
   matte: "Person Matte",
   alpha: "Green Screen",
@@ -337,8 +340,11 @@ export function DepthWorkspace() {
     if (completedJobId) setActiveResult("depth");
   }
 
+  const isImageSource = file?.type.startsWith("image/") ?? false;
+  const resultExt = isImageSource ? "png" : "mp4";
   const resultTabs = job?.status === "complete" && job.results
     ? ([
+        { kind: "original" as const, path: job.results.previews.original },
         {
           kind: "depth" as const,
           path: job.results.previews.depthBase ?? job.results.previews.depth,
@@ -418,11 +424,17 @@ export function DepthWorkspace() {
           </defs>
         </svg>
         {activePreviewUrl ? (
-          activeResult === "validation" ? (
+          activeResult === "validation" || isImageSource ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
+              key={activePreviewUrl}
               src={activePreviewUrl}
-              alt="Depth, Person Matte와 원본 프레임을 비교하는 Validation Sheet"
+              alt={
+                activeResult === "validation"
+                  ? "Depth, Person Matte와 원본 프레임을 비교하는 Validation Sheet"
+                  : `${RESULT_LABELS[activeResult]} 결과 이미지`
+              }
+              style={activeResult === "depth" ? { filter: "url(#depth-levels-preview-filter)" } : undefined}
               className="h-full w-full object-contain"
             />
           ) : (
@@ -660,14 +672,15 @@ export function DepthWorkspace() {
               <DownloadSimple size={16} />
             </div>
             <div className="grid gap-2">
-              <DownloadLink href={job.results.depth} label="Download Depth" filename="depdy_depth.mp4" version={downloadVersion} />
-              <DownloadLink href={job.results.depthSequence} label="Download Depth Sequence (ZIP)" filename="depdy_depth_sequence.zip" version={downloadVersion} secondary />
-              {job.results.matte && <DownloadLink href={job.results.matte} label="Download Person Matte" filename="depdy_person_matte.mp4" version={downloadVersion} secondary />}
-              {job.results.lineart && <DownloadLink href={job.results.lineart} label="Download Line Art" filename="depdy_lineart.mp4" version={downloadVersion} secondary />}
+              <DownloadLink href={job.results.original} label="Download Original" filename={`depdy_original.${resultExt}`} version={downloadVersion} secondary />
+              <DownloadLink href={job.results.depth} label="Download Depth" filename={`depdy_depth.${resultExt}`} version={downloadVersion} />
+              {job.results.depthSequence && <DownloadLink href={job.results.depthSequence} label="Download Depth Sequence (ZIP)" filename="depdy_depth_sequence.zip" version={downloadVersion} secondary />}
+              {job.results.matte && <DownloadLink href={job.results.matte} label="Download Person Matte" filename={`depdy_person_matte.${resultExt}`} version={downloadVersion} secondary />}
+              {job.results.lineart && <DownloadLink href={job.results.lineart} label="Download Line Art" filename={`depdy_lineart.${resultExt}`} version={downloadVersion} secondary />}
               {job.results.lineartSequence && <DownloadLink href={job.results.lineartSequence} label="Download Line Art Sequence (ZIP)" filename="depdy_lineart_sequence.zip" version={downloadVersion} secondary />}
-              {job.results.pose && <DownloadLink href={job.results.pose} label="Download Pose Skeleton" filename="depdy_pose.mp4" version={downloadVersion} secondary />}
+              {job.results.pose && <DownloadLink href={job.results.pose} label="Download Pose Skeleton" filename={`depdy_pose.${resultExt}`} version={downloadVersion} secondary />}
               {job.results.poseSequence && <DownloadLink href={job.results.poseSequence} label="Download Pose Skeleton Sequence (ZIP)" filename="depdy_pose_sequence.zip" version={downloadVersion} secondary />}
-              {job.results.alpha && <DownloadLink href={job.results.alpha} label="Download Green Screen" filename="depdy_green_screen.mp4" version={downloadVersion} secondary />}
+              {job.results.alpha && <DownloadLink href={job.results.alpha} label="Download Green Screen" filename={`depdy_green_screen.${resultExt}`} version={downloadVersion} secondary />}
               <DownloadLink href={job.results.validation} label="Download Validation Sheet" filename="depdy_validation_sheet.jpg" version={downloadVersion} secondary />
             </div>
           </div>
