@@ -11,6 +11,10 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
     throw "The Python launcher (py) is not on PATH. Install Python 3.11."
 }
+py -3.11 --version *> $null
+if ($LASTEXITCODE -ne 0) {
+    throw "Python 3.11 is not installed (py -3.11 failed). Install it from https://www.python.org/downloads/ and make sure 'py -3.11 --version' works, then re-run this script."
+}
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     throw "Node.js is not on PATH."
 }
@@ -23,6 +27,9 @@ Write-Host "1/5 Initializing submodules..."
 Push-Location $Root
 try {
     git submodule update --init --recursive
+    if ($LASTEXITCODE -ne 0) {
+        throw "git submodule update failed (exit $LASTEXITCODE)."
+    }
 } finally {
     Pop-Location
 }
@@ -30,8 +37,14 @@ try {
 Write-Host "2/5 Python virtual environment..."
 if (-not (Test-Path -LiteralPath $Python)) {
     py -3.11 -m venv (Join-Path $Root ".venv")
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $Python)) {
+        throw "Failed to create the virtual environment with 'py -3.11 -m venv' (exit $LASTEXITCODE)."
+    }
 }
 & $Python -m pip install --quiet -r (Join-Path $Root "worker\requirements.txt")
+if ($LASTEXITCODE -ne 0) {
+    throw "pip install failed (exit $LASTEXITCODE)."
+}
 
 Write-Host "3/5 Depth model checkpoint..."
 if (-not (Test-Path -LiteralPath $Checkpoint)) {
@@ -45,6 +58,9 @@ Write-Host "4/5 Web dependencies..."
 Push-Location (Join-Path $Root "web")
 try {
     npm ci
+    if ($LASTEXITCODE -ne 0) {
+        throw "npm ci failed (exit $LASTEXITCODE)."
+    }
 } finally {
     Pop-Location
 }
