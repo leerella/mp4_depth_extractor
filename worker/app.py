@@ -407,6 +407,7 @@ def run_depth_job(
             result_url=f"/jobs/{job_id}/depth",
             results=results,
             preset=preset,
+            is_image=is_image,
             levels={
                 "invert": invert,
                 "contrast": contrast,
@@ -515,6 +516,7 @@ def update_levels(
     if not raw_depth.exists() or not normalized.exists():
         raise HTTPException(404, "재조정에 필요한 원본 Depth를 찾을 수 없습니다.")
 
+    is_image = bool(job.get("is_image"))
     try:
         preset_changed = job.get("preset") != preset
         process_sources(
@@ -532,12 +534,23 @@ def update_levels(
             False,
             preset_changed,
         )
-        matte_path = output_dir / "depdy_matte.mp4"
-        lineart_path = output_dir / "depdy_lineart.mp4"
-        pose_path = output_dir / "depdy_pose.mp4"
+        if is_image:
+            # process_sources() always rewrites depdy_depth.mp4 (+ its sequence zip);
+            # image-sourced jobs need that collapsed back into a single still, same as
+            # the initial run, or the "depth" route would start serving a 1-frame clip again.
+            image_from_sequence_zip(output_dir / "depdy_depth_sequence.zip", output_dir / "depdy_depth.png")
+            (output_dir / "depdy_depth.mp4").unlink()
+            preview_base = output_dir / "depdy_depth_preview_base.mp4"
+            if preview_base.exists():
+                image_from_video_frame(preview_base, output_dir / "depdy_depth_preview_base.png")
+
+        ext = ".png" if is_image else ".mp4"
+        matte_path = output_dir / f"depdy_matte{ext}"
+        lineart_path = output_dir / f"depdy_lineart{ext}"
+        pose_path = output_dir / f"depdy_pose{ext}"
         create_validation_sheet(
             normalized,
-            output_dir / "depdy_depth.mp4",
+            output_dir / f"depdy_depth{ext}",
             matte_path if "matte" in job["results"] else None,
             lineart_path if "lineart" in job["results"] else None,
             pose_path if "pose" in job["results"] else None,
@@ -629,3 +642,31 @@ register_asset("pose", "depdy_pose", VIDEO_OR_IMAGE, "Pose Skeleton")
 register_asset("pose/sequence", "depdy_pose_sequence", [(".zip", "application/zip")], "Pose Skeleton", download_label="Pose Skeleton 시퀀스", preview=False)
 register_asset("alpha", "depdy_green_screen", VIDEO_OR_IMAGE, "Green Screen")
 register_asset("validation", "validation-sheet", [(".jpg", "image/jpeg")], "Validation Sheet", download_stem="depdy_validation_sheet", download_label="Validation Sheet")
+
+BUNDLE_ASSETS = [
+    ("depdy_original", "depdy_original", VIDEO_OR_IMAGE),
+    ("depdy_depth", "depdy_depth", VIDEO_OR_IMAGE),
+    ("depdy_matte", "depdy_person_matte", VIDEO_OR_IMAGE),
+    ("depdy_lineart", "depdy_lineart", VIDEO_OR_IMAGE),
+    ("depdy_pose", "depdy_pose", VIDEO_OR_IMAGE),
+    ("depdy_green_screen", "depdy_green_screen", VIDEO_OR_IMAGE),
+    ("validation-sheet", "depdy_validation_sheet", [(".jpg", "image/jpeg")]),
+]
+
+
+@app.get("/jobs/{job_id}/download-all")
+def download_all(job_id: str) -> FileResponse:
+    output_dir = RUNTIME / job_id / "output"
+    if not output_dir.exists():
+        raise HTTPException(404, "작업 결과를 찾을 수 없습니다.")
+
+    zip_path = output_dir / "depdy_all_sources.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for disk_stem, zip_stem, candidates in BUNDLE_ASSETS:
+            for ext, _ in candidates:
+                candidate = output_dir / f"{disk_stem}{ext}"
+                if candidate.exists():
+                    archive.write(candidate, f"{zip_stem}{ext}")
+                    break
+
+    return FileResponse(zip_path, media_type="application/zip", filename=f"depdy_{job_id[:8]}_all.zip")

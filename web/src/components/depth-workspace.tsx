@@ -669,7 +669,15 @@ export function DepthWorkspace() {
           <div className="mt-6 border-t border-[#d9dad6] pt-5">
             <div className="mb-3 flex items-center justify-between">
               <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-[#74777c]">Downloads</p>
-              <DownloadSimple size={16} />
+              <a
+                href={`${WORKER_URL}/jobs/${job.id}/download-all?v=${downloadVersion}`}
+                download={`depdy_${job.id.slice(0, 8)}_all.zip`}
+                aria-label="모든 결과를 ZIP으로 한번에 다운로드"
+                title="전체 다운로드 (ZIP)"
+                className="text-[#101318] transition-colors hover:text-[#62666d]"
+              >
+                <DownloadSimple size={16} />
+              </a>
             </div>
             <div className="grid gap-2">
               <DownloadLink href={job.results.original} label="Download Original" filename={`depdy_original.${resultExt}`} version={downloadVersion} secondary />
