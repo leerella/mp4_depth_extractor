@@ -49,7 +49,7 @@ Set-Location mp4_depth_extractor
 .\start-depdy.ps1
 ```
 
-자동으로 브라우저가 열립니다. 안 열리면 직접 **http://localhost:3000** 을 주소창에 입력하세요. 다 쓰고 끝낼 때는 `.\stop-depdy.ps1`을 실행합니다.
+자동으로 브라우저가 열립니다. 안 열리면 직접 **http://localhost:3002** 을 주소창에 입력하세요. 다 쓰고 끝낼 때는 `.\stop-depdy.ps1`을 실행합니다.
 
 ### 문제가 생겼다면
 
@@ -78,7 +78,7 @@ Windows PowerShell에서 프로젝트 루트로 이동한 뒤 실행합니다.
 
 스크립트는 반드시 이 프로젝트의 `.venv`를 사용하고, 프로덕션 웹을 빌드한 뒤 다음 서비스를 시작합니다.
 
-- 웹: http://localhost:3000
+- 웹: http://localhost:3002
 - 워커 상태: http://127.0.0.1:8000/health
 
 종료할 때는 다음 명령을 사용합니다.

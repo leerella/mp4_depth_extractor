@@ -63,7 +63,7 @@ if (-not $WorkerProcessId) {
 }
 Wait-ForUrl "http://127.0.0.1:8000/health"
 
-$WebProcessId = Get-ListeningProcessId 3000
+$WebProcessId = Get-ListeningProcessId 3002
 if (-not $WebProcessId) {
     Push-Location $WebRoot
     try {
@@ -79,7 +79,7 @@ if (-not $WebProcessId) {
     $Next = Join-Path $WebRoot "node_modules\next\dist\bin\next"
     $Web = Start-Process `
         -FilePath $Node `
-        -ArgumentList @($Next, "start", "-H", "127.0.0.1", "-p", "3000") `
+        -ArgumentList @($Next, "start", "-H", "127.0.0.1", "-p", "3002") `
         -WorkingDirectory $WebRoot `
         -WindowStyle Hidden `
         -RedirectStandardOutput (Join-Path $Runtime "web.stdout.log") `
@@ -87,9 +87,9 @@ if (-not $WebProcessId) {
         -PassThru
     Set-Content -LiteralPath $WebPidFile -Value $Web.Id
 }
-Wait-ForUrl "http://127.0.0.1:3000/"
+Wait-ForUrl "http://127.0.0.1:3002/"
 
-Write-Host "DEPDY is running: http://localhost:3000"
+Write-Host "DEPDY is running: http://localhost:3002"
 if (-not $NoBrowser) {
-    Start-Process "http://localhost:3000"
+    Start-Process "http://localhost:3002"
 }
